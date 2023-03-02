@@ -1,0 +1,880 @@
+////
+NO CAMBIAR!!
+Codificación, idioma, tabla de contenidos, tipo de documento
+////
+:encoding: utf-8
+:lang: es
+:toc: right
+:toc-title: Tabla de contenidos
+:doctype: book
+:imagesdir: ./images
+:linkattrs:
+:toclevels: 4
+////
+Nombre y título del trabajo
+////
+# Bases de datos clave-valor (tutorial en curso)
+Bases de datos a gran escala - Máster en Tecnologías y Aplicaciones en Ingeniería Informática
+Manuel Torres <mtorres@ual.es>
+
+image::logocloudstic.png[]
+
+// NO CAMBIAR!! (Entrar en modo no numerado de apartados)
+:numbered!: 
+
+
+[abstract]
+== Resumen
+////
+COLOCA A CONTINUACION EL RESUMEN
+////
+xxx
+
+////
+COLOCA A CONTINUACION LOS OBJETIVOS
+////
+.Objetivos
+* xxx
+
+[TIP]
+====
+Disponibles los repositorios usados en este tutorial.
+
+* xxx
+====
+
+// Entrar en modo numerado de apartados
+:numbered:
+
+## Introducción a las bases de datos clave-valor
+
+* Tabla hash
+* Usadas cuando todos los accesos son vía clave primaria
+* Ofrecen gran rendimiento
+* Fácilmente escalables
+* El valor es un blob que la BD almacena, sin preocuparse de qué hay dentro. Son las aplicaciones las que comprenden qué hay almacenado
+
+
+
+[INFO]
+====
+https://db-engines.com/en/ranking/key-value+store[Ranking de las bases de datos clave-valo] en DB-Engines.com 
+====
+
+## Redis como base de datos clave-valor
+
+> Redis is an open source (BSD licensed), **in-memory data structure store used as a database, cache, message broker, and streaming engine**. Redis provides data structures such as strings, hashes, lists, sets, sorted sets with range queries, bitmaps, hyperloglogs, geospatial indexes, and streams. Redis has **built-in replication**, Lua scripting, LRU eviction, transactions, and **different levels of on-disk persistence** via Redis Sentinel and **automatic partitioning** with Redis Cluster.
+> (https://redis.io/docs/about/)
+
+[INFO]
+====
+https://try.redis.io/[Tutorial Try Redis]
+====
+
+### Instalación
+
+* https://www.server-world.info/en/note?os=Ubuntu_22.04&p=redis6&f=1[Instalación de Redis en Ubuntu]
+* https://facsiaginsa.com/redis/setup-redis-ha-using-sentinel[Configuración de Sentinel para alta disponibidad]
+* https://gist.github.com/ualmtorres/3cb1c0536fb691577c78bfa8402135e0[Instalación standalone con Docker Compose (incluye RedisInsight - Web GUI)]
+* https://raw.githubusercontent.com/bitnami/containers/main/bitnami/redis-cluster/docker-compose.yml[Cluster Redis con Docker Compose]
+
+### Configuración de Redis
+
+* Parámeteros en redis.conf (muy bien descrito)
+* Algunos parámetros de interés
+** `daemonize` (ejecución como daemon)
+** `port` (puerto de escucha)
+** `bind` (IPs a las que se escucha)
+** `timeout` (corte a clientes inactivos)
+** `databases` (número de bases de datos)
+** `save` (retraso en almacenamiento en disco)
+** `dbfilename` (nombre del archivo de la BD. En /src)
+** `slaveof` (para Replicación Maestro-Esclavo)
+*** Cada servidor tiene su propio `redis.conf``
+
+### Snapshotting
+
+* Redis no almacena directamente en disco. Hay un retraso (Se pueden perder algunos datos)
+* En `redis.conf` se especifica número de cambios ocurridos antes de almacenar en disco
+**  Valores predeterminados 
+
+    save 900 1
+    save 300 10
+    save 60 10000
+
+* También es posible no almacenar nada en disco
+
+### Archivo Append-Only
+* Redis es persistente eventualmente de forma predeterminada
+** Escritura en disco a intervalos o a petición del cliente (`SAVE`)
+* Redis dispone del archivo `appendonly.aof` que guarda un registro para cada operación de escritura
+** Es un log
+** Si el servidor cae antes de escribir en disco, cuando vuelva a estar disponible incluirá lo que esté pendiente
+* Activación:
+** `appendonly yes` (Archivo `redis.conf`)
+* Actualización
+** Compromiso entre consistencia y velocidad
+*** Ajustable en `redis.conf` con `appendfsync`
+*** Valores
+
+    # appendfsync always
+    appendfsync everysec (Valor más habitual) 
+    # appendfsync no
+
+### Monitorización del rendimiento
+
+* Utilidad `redis-benchmark`
+** Conexión al puerto 6379
+** 10.000 peticiones
+** 50 clientes paralelos
+** Operaciones `SET, GET, INCR, LPUSH, LPOP, SADD, SPOP, LRANGE (100, 300, 500, 600)` y `MSET`
+* Cambio número de peticiones
+** `redis-benchmark –n numeroPeticiones`
+
+### Clientes
+
+Many languages have Redis bindings, including:
+
+* C, C#, Dart, Go, Java, Node.js, Perl, PHP, Python, Ruby, ...
+* http://redis.io/clients
+
+
+## Operaciones básicas
+
+### `SET` y `GET`
+
+[source, bash]
+----
+SET ual "https://www.ual.es"
+"OK"
+
+GET ual
+"https://www.ual.es"
+
+MSET ugr "https://www.ugr.es" uma "https://www.uma.es"
+"OK"
+
+MGET ugr uma
+1) "https://www.ugr.es"
+2) "https://www.uma.es"
+
+DEL uma
+(integer) 1
+
+GET uma
+"(nil)"
+----
+
+====
+**Ejemplos de uso**
+
+
+* Acortar URLs
+** clave: URL corta
+** valor: URL original
+* Caché de llamadas a APIs 
+** clave: URL llamada API
+** valor: contenido de la respuesta a la llamada
+====
+
+### Operaciones `INCR` y `DECR`
+
+[source, bash]
+----
+SET count 1
+"OK"
+
+INCR count
+(integer) 2
+
+GET count
+"2"
+
+INCRBY count 10
+(integer) 12
+
+DECRBY count 5
+(integer) 7
+
+GET count
+"7"
+
+SET cadena "Hola"
+"OK"
+
+INCR cadena
+"ERR value is not an integer or out of range"
+----
+
+### `APPEND`
+
+[source, bash]
+----
+EXISTS myKey
+"(nil)"
+
+APPEND myKey "Hello"
+(integer) 5
+
+APPEND myKey " World!!"
+(integer) 13
+
+GET myKey
+"Hello World!!"
+----
+
+
+### Listas
+
+* Colecciones ordenadas de elementos que actúan como pilas y colas
+* Permiten también inserción en cualquier parte
+* Pueden contener valores repetidos
+
+[INFO]
+====
+**Ejemplos de uso**
+
+Almacenamiento de los sitios preferidos de usuarios
+====
+
+#### Sintaxis básica
+
+* `LPUSH key value [value ...]` (También `RPUSH`)
+** Prepend one or multiple values to a list
+* `LPOP key` (También `RPOP`)
+** Remove and get the first element in a list
+* `LRANGE key start stop`
+** Get a range of elements from a list
+* `LSET key index value`
+** Set the value of an element in a list by its index
+* `LREM key count value`
+** Remove elements from a list
+* `LLEN key`
+** Get the length of a list
+* `LINDEX key index`
+** Get an element from a list by its index
+* `LINSERT key BEFORE|AFTER pivot value`
+** Insert an element before or after another element in a list
+
+
+**Ejemplos**
+
+[source, bash]
+----
+LPUSH colores amarillo
+(integer) 1
+
+LPUSH colores rojo
+(integer) 2
+
+RPUSH colores verde
+(integer) 3
+
+LRANGE colores 0 -1
+1) "rojo"
+2) "amarillo"
+3) "verde"
+
+LRANGE colores 1 2
+1) "amarillo"
+2) "verde"
+
+LPOP colores
+"rojo"
+
+LRANGE colores 0 -1
+1) "amarillo"
+2) "verde"
+
+LSET colores 0 rojo
+"OK"
+
+LRANGE colores 0 -1
+1) "rojo"
+2) "verde"
+
+LINDEX colores 1
+"verde"
+
+LINSERT colores before verde amarillo
+(integer) 3
+
+LRANGE colores 0 -1
+1) "rojo"
+2) "amarillo"
+3) "verde"
+
+LLEN colores
+(integer) 3
+----
+
+### Listas bloqueadas
+
+* El cliente (suscriptor) se suscribe con un timeout (en segundos) con `BRPOP | BLPOP elemento timeout`
+* El cliente queda bloqueado esperando hasta que haya un valor o hasta que se produzca el timeout
+* Un grupo de usuarios (publishers) escriben (push) en una lista y un usuario cliente saca (pop) elementos de la lista. 
+
+[cols="1,1"]
+|===
+| **Suscriptor** | **Publicador**
+| `www.xxx.yyy.zzz:6379> echo "Soy el suscriptor"`
+
+`"Soy el suscriptor"`
+
+`BRPOP comments 300`
+
+_Bloqueado hasta publicación o timeout_
+| 
+
+|
+|  `echo "Soy el productor de elementos"`
+
+`"Soy el productor de elementos"`
+
+`> LPUSH comments "Mi comentario"`
+
+`(integer) 1`
+
+| _Desbloqueado por la publicación_
+
+`1) "comments"`
+
+`2) "Mi comentario"`
+
+`(220.57s)` <- _Tiempo transcurrido para la publicación por parte del suscriptor_
+|
+|===
+
+### Conjuntos
+
+* Colecciones no ordenadas de elementos
+* No permiten duplicados
+* Permiten operaciones de unión, intersección y diferencia
+
+
+[NOTA]
+====
+**Ejemplos de uso**
+
+Posts agrupados por palabras clave
+====
+
+**Sintaxis**
+
+* `SADD key member [member ...]`
+**  Add one or more members to a set
+* `SREM key member [member ...]`
+* Remove one or more members from a set
+* `SPOP key`
+** Remove and return a random member from a set
+* `SMEMBERS key`
+** Get all the members in a set
+* `SCARD key`
+** Get the number of members in a set
+
+**Ejemplos**
+
+[source, bash]
+----
+GET semaforo
+"(nil)"
+
+SADD semaforo rojo amarillo verde
+(integer) 3
+
+SMEMBERS semaforo
+1) "amarillo"
+2) "verde"
+3) "rojo"
+
+SREM semaforo amarillo
+(integer) 1
+
+SPOP semaforo
+"verde"
+
+SMEMBERS semaforo
+1) "rojo"
+
+SADD semaforo amarillo verde
+(integer) 2
+
+SCARD semaforo
+(integer) 3
+
+SADD semaforo amarillo
+(integer) 1
+
+SMEMBERS semaforo
+1) "amarillo"
+2) "verde"
+3) "rojo"
+----
+
+#### Operaciones comunes de conjuntos
+
+**Sintaxis**
+
+* `SUNION key [key ...]`
+** Add multiple sets
+* `SDIFF key [key ...]`
+** Subtract multiple sets
+* `SINTER key [key ...]`
+** Intersect multiple sets
+* `SISMEMBER key member`
+** Determine if a given value is a member of a set
+
+**Ejemplos**
+
+[source, bash]
+----
+SADD arcoIris rojo naranja amarillo verde azul añil violeta
+(integer) 7
+
+SUNION semaforo arcoIris
+1) "azul"
+2) "a\xc3\xb1il"
+3) "naranja"
+4) "verde"
+5) "rojo"
+6) "amarillo"
+7) "member"
+8) "violeta"
+
+SDIFF arcoIris semaforo
+1) "azul"
+2) "a\xc3\xb1il"
+3) "naranja"
+4) "violeta"
+
+SINTER arcoIris semaforo
+1) "verde"
+2) "rojo"
+3) "amarillo"
+
+SISMEMBER semaforo naranja
+"(nil)"
+----
+
+### Conjuntos ordenados
+
+* Similares a los conjuntos, pero cada valor tiene un
+score para poder establecer el orden
+* Conjuntos con
+** Valores únicos (como los conjuntos)
+** Ordenados (como las listas)
+* La inserción se realiza ordenada
+
+[INFO]
+====
+**Ejemplos de uso**
+
+* Número de visitas de sitios web
+* Ventas o clics por productos
+====
+
+**Sintaxis**
+
+* `ZADD key score member [score member ...]`
+** Add one or more members to a sorted set, or update its score if it already exists
+* `ZCARD key`
+** Get the number of members in a sorted set
+* `ZCOUNT key min max`
+**  Count the members in a sorted set with scores within the given
+values
+* `ZINCRBY key increment member`
+**  Increment the score of a member in a sorted set
+* `ZSCORE key member`
+**  Get the score associated with the given member in a sorted set
+* `ZRANGE key start stop [WITHSCORES]`
+** Return a range of members in a sorted set, by index
+* `ZRANGEBYSCORE key min max [WITHSCORES] [LIMIT offset count]`
+** Return a range of members in a sorted set, by score
+* `ZRANK key member`
+**  Determine the index of a member in a sorted set
+* `ZREM key member [member ...]`
+** Remove one or more members from a sorted set
+* `ZREMRANGEBYRANK key start stop`
+** Remove all members in a sorted set within the given indexes
+* `ZREMRANGEBYSCORE key min max`
+** Remove all members in a sorted set within the given scores
+
+**Ejemplos**
+
+[source, bash]
+----
+ZADD productos 27 "Champu"
+(integer) 1
+
+ZADD productos 12 "Lejia"
+(integer) 1
+
+ZADD productos 34 "Suavizante"
+(integer) 1
+
+ZADD productos 6 "Detergente"
+(integer) 1
+
+ZADD productos 15 "Antical" 18 "Quitamanchas" 4 "Activador lavado" 3 "Agua destilada"
+(integer) 4
+
+ZCARD productos
+(integer) 8
+
+ZCOUNT productos 0 5
+(integer) 2
+
+ZINCRBY productos -1 "Champu"
+"26"
+
+ZSCORE productos "Champu"
+"26"
+
+ZRANGE productos 0 5 WITHSCORES
+1) "Agua destilada"
+2) "3"
+3) "Activador lavado"
+4) "4"
+5) "Detergente"
+6) "6"
+7) "Lejia"
+8) "12"
+9) "Antical"
+10) "15"
+11) "Quitamanchas"
+12) "18"
+
+ZRANGEBYSCORE productos 0 5 WITHSCORES
+1) "Agua destilada"
+2) "3"
+3) "Activador lavado"
+4) "4"
+
+ZRANK productos "Activador lavado"
+(integer) 1
+
+ZINCRBY productos -3 "Activador lavado"
+"1"
+
+ZRANK productos "Activador lavado"
+(integer) 0
+
+ZRANGE productos 0 -1 WITHSCORES
+1) "Activador lavado"
+2) "1"
+3) "Agua destilada"
+4) "3"
+5) "Detergente"
+6) "6"
+7) "Lejia"
+8) "12"
+9) "Antical"
+10) "15"
+11) "Quitamanchas"
+12) "18"
+
+ZREM productos "Quitamanchas"
+(integer) 1
+
+ZREMRANGEBYSCORE productos 15 50
+(integer) 1
+
+ZRANGE productos 0 -1
+1) "Activador lavado"
+2) "Agua destilada"
+3) "Detergente"
+4) "Lejia"
+
+ZREMRANGEBYRANK productos 2 -1
+(integer) 2
+
+ZRANGE productos 0 -1
+1) "Activador lavado"
+2) "Agua destilada"
+----
+
+### Hashes
+
+* Objetos Redis anidados que pueden tomar cualquier número de pares clave-valor
+* No se puede anidar
+* Son la estructura de datos adecuada para representar objetos
+**  `HSET user:1000 nombre "Manuel Torres"`
+**  `HSET user:1000 email "mtorres@ual.es"`
+**  `HSET user:1000 universidad "Universidad de Almeria"`
+
+**Sintaxis**
+
+* `HSET key field value`
+** Set the string value of a hash field
+* `HMSET key field value [field value ...]`
+** Set multiple hash fields to multiple values
+* `HGET key field`
+** Get the value of a hash field
+* `HMGET key field [field ...]`
+** Get the values of all the given hash fields
+* `HGETALL key`
+** Get all the fields and values in a hash
+* `HDEL key field [field ...]`
+** Delete one or more hash fields
+* `HEXISTS key field`
+** Determine if a hash field exists
+* `HINCRBY key field increment`
+** Increment the integer value of a hash field by the given number
+* `HKEYS key`
+** Get all the fields in a hash
+* `HVALS key`
+** Get all the values in a hash
+
+**Ejemplos**
+
+[source, bash]
+----
+HSET user:1000 nombre "Manuel Torres"
+(integer) 1
+
+HSET user:1000 email "mtorres@ual.es"
+(integer) 1
+
+HSET user:1000 universidad "Universidad de Almeria"
+(integer) 1
+
+HSET user:1000 asignaturas 5
+(integer) 1
+
+HGET user:1000 email
+"mtorres@ual.es"
+
+HMSET user:1001 nombre "Antonio Corral" email "acorral@ual.es" asignaturas 7
+"OK"
+
+HGETALL user:1000
+1) "nombre"
+2) "Manuel Torres"
+3) "email"
+4) "mtorres@ual.es"
+5) "universidad"
+6) "Universidad de Almeria"
+7) "asignaturas"
+8) "5"
+
+HDEL user:1001 asignaturas
+(integer) 1
+
+HEXISTS user:1001 asignaturas
+"(nil)"
+
+HINCRBY user:1000 asignaturas 1
+(integer) 6
+
+HKEYS user:1000
+1) "nombre"
+2) "email"
+3) "universidad"
+4) "asignaturas"
+
+HVALS user:1000
+1) "Manuel Torres"
+2) "mtorres@ual.es"
+3) "Universidad de Almeria"
+4) "6"
+
+HVALS user:1001
+1) "Antonio Corral"
+2) "acorral@ual.es"
+
+HKEYS user:1001
+1) "nombre"
+2) "email"
+----
+
+## Expiración de pares clave-valor
+
+* Un uso interesante de Redis es como caché de datos que son pesados de obtener o calcular
+* Con TTL evitamos que esta caché crezca sin control
+* Los pares clave-valor se borran pasado un tiempo (TTL)
+
+### Comandos habituales
+
+* `EXPIRE key seconds`
+** Set a key's time to live in seconds
+* `SETEX key seconds value`
+** Set the value and expiration of a key
+* `EXPIREAT key timestamp`
+** Set the expiration for a key as a UNIX timestamp (número de segundos transcurridos desde el 1 de enero de 1970)
+* `TTL key`
+** Get the time to live for a key
+* `EXISTS key`
+** Determine if a key exists
+* `PERSIST`
+** Elimina el timeout antes de que la clave deje de existir
+
+**Ejemplos**
+
+[source, bash]
+----
+SET "https://www.bdge.com" "<html><body> ... </body></html>"
+"OK"
+
+EXPIRE "https://www.bdge.com" 60
+(integer) 1
+
+SETEX "https://www.bdge.com" 60 "<html><body> ... </body></html>"
+"OK"
+
+TTL "https://www.bdge.com"
+(integer) 53
+
+EXISTS "https://www.bdge.com"
+(integer) 1
+
+PERSIST "https://www.bdge.com"
+(integer) 1
+
+TTL "https://www.bdge.com"
+(integer) -1
+----
+
+## Espacios de nombres
+
+Las claves residen en un espacio de nombres
+
+* Redis los llama Bases de datos
+* Claves únicas a nivel de espacio de nombres
+* Espacios de nombres identificados por número (0, ...)
+* Cambio de espacio de nombres (BD) con `SELECT`
+
+**Ejemplos**
+
+[source, bash]
+----
+SET saludo "Hola"
+OK
+
+GET saludo
+"Hola"
+
+SELECT 1
+OK
+
+GET saludo
+(nil)
+
+SET saludo "Hello" 
+OK
+
+GET saludo
+"Hello"
+
+SELECT 0
+OK
+
+GET saludo
+"Hola"
+----
+
+[INFO]
+====
+**Ejemplos de uso**
+
+Internacionalización (Una BD para cada idioma)
+====
+
+## Publicación-Suscripción
+
+* Un usuario envía (post) un comentario a múltiples
+suscriptores conectados a un canal
+** Cliente: `SUBSCRIBE <canal>`
+** Escritor: `PUBLISH <canal>`
+
+[cols="1,1,1"]
+|===
+| **Suscriptor 1** | **Suscriptor 2** | **Publicador**
+
+
+| `SUBSCRIBE comments
+
+Reading messages... (press Ctrl-C to quit)
+
+1) "subscribe"
+
+2) "comments"
+
+3) (integer) 1`
+
+_Esperando_
+|
+|
+
+|
+| `SUBSCRIBE comments
+
+Reading messages... (press Ctrl-C to quit)
+
+1) "subscribe"
+
+2) "comments"
+
+3) (integer) 1`
+
+_Esperando_
+|
+
+|
+|
+| `PUBLISH comments "Esto es importante"`
+
+| `1) "message"
+
+2) "comments"
+
+3) "Esto es importante"``
+
+_Esperando_
+| `1) "message"
+
+2) "comments"
+
+3) "Esto es importante"``
+
+_Esperando_
+|
+|===
+
+## Transacciones
+
+* Redis permite ejecutar un bloque de sentencias de forma similar a las transacciones
+* Las operaciones son encoladas para poder ejecutarse en secuencia
+* Transacciones cancelables si siguen encoladas
+** Comando `DISCARD`
+
+**Ejemplos**
+
+[source,bash]
+----
+
+MULTI
+"OK"
+
+SET uja "https://www.uja.es"
+"QUEUED"
+
+SET count 1
+"QUEUED"
+
+EXEC
+1) "OK"
+2) "OK"
+----
+
+## Resumen
+
+* Redis es una BD clave-valor ligera y compacta
+* No es una BD para usarla sola, sino como complemento en un ecosistema políglota
+* Util para cachés, transformación de datos y sesiones
+* Posibilidad de funcionar en Maestro-esclavo
+* Atención:
+** Datos almacenados asíncronamente
+** BD limitada por la cantidad de RAM
+
+## Referencias
+
