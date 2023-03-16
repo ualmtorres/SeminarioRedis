@@ -17,7 +17,7 @@ Nombre y título del trabajo
 Bases de datos a gran escala - Máster en Tecnologías y Aplicaciones en Ingeniería Informática
 Manuel Torres <mtorres@ual.es>
 
-image::logocloudstic.png[]
+image::di.png[]
 
 // NO CAMBIAR!! (Entrar en modo no numerado de apartados)
 :numbered!: 
@@ -28,19 +28,22 @@ image::logocloudstic.png[]
 ////
 COLOCA A CONTINUACION EL RESUMEN
 ////
-xxx
+Redis es un sistema de almacenamiento em memoria de alto rendimiento. Pertenece a a la familia de bases d datos clave-valor dentro de las bases de datos NoSQL. Dado su modelo de almacenamiento permite su despliegue en cluster. De cara al desarrollo cuenta con gran cantidad de clientes para su uso en aplicaciones. En este tutorial realizaremos una pequeña introducción a Redis, su instalación y presentaremos los comandos básicos.
 
 ////
 COLOCA A CONTINUACION LOS OBJETIVOS
 ////
 .Objetivos
-* xxx
+* Conocer las ventajas que aporta Redis y cómo puede complementar otros sistemas de almacenamiento (p.e. caché de llamadas a APIs)
+* Realizar distintos tipos de instalación
+* Utilizar los comandos básicos
 
 [TIP]
 ====
-Disponibles los repositorios usados en este tutorial.
+Enlaces de interés:
 
-* xxx
+* https://github.com/ualmtorres/bdge-express-test[Tutorial sobre uso de Redis en una API REST en Express]
+* https://github.com/ualmtorres/bdge-entorno-desarrollo-docker/blob/master/docker-compose.yml[Archivo `docker-compose.yml` para instalación de bases de datos NoSQL (Redis, MongoDB, Neo4j)]
 ====
 
 // Entrar en modo numerado de apartados
@@ -876,5 +879,4 @@ EXEC
 ** Datos almacenados asíncronamente
 ** BD limitada por la cantidad de RAM
 
-## Referencias
 
